@@ -1,0 +1,91 @@
+type AddMemberPayload = record { team_id : nat64; member_id : nat64 };
+type AssignCoachPayload = record { coach_id : nat64; team_id : nat64 };
+type CreateTeamPayload = record { name : text; sport_type : SportType };
+type Match = record {
+  id : nat64;
+  result : opt MatchResult;
+  sport_type : SportType;
+  home_team : Team;
+  away_team : Team;
+  scheduled_date : text;
+};
+type MatchResult = record {
+  winner_team_id : nat64;
+  score_team_a : nat32;
+  score_team_b : nat32;
+  notes : text;
+};
+type MatchResultPayload = record { result : MatchResult; match_id : nat64 };
+type RegisterUserPayload = record {
+  name : text;
+  role : UserRole;
+  email : text;
+  address : text;
+};
+type Result = variant { Ok : Team; Err : text };
+type Result_1 = variant { Ok : vec Match; Err : text };
+type Result_2 = variant { Ok : vec Team; Err : text };
+type Result_3 = variant { Ok : vec User; Err : text };
+type Result_4 = variant { Ok : Match; Err : text };
+type Result_5 = variant { Ok : User; Err : text };
+type ScheduleMatchPayload = record {
+  home_team_id : nat64;
+  sport_type : SportType;
+  away_team_id : nat64;
+  scheduled_date : text;
+};
+type SportType = variant {
+  Basketball;
+  Tennis;
+  Volleyball;
+  Football;
+  Cricket;
+  Golf;
+  TableTennis;
+  Rugby;
+  Badminton;
+  Hockey;
+};
+type Team = record {
+  id : nat64;
+  members : vec nat64;
+  name : text;
+  sport_type : SportType;
+  coaches : vec nat64;
+};
+type UpdateUserPayload = record {
+  id : nat64;
+  name : text;
+  role : UserRole;
+  email : text;
+  address : text;
+};
+type User = record {
+  id : nat64;
+  owner : principal;
+  name : text;
+  role : UserRole;
+  email : text;
+  address : text;
+};
+type UserRole = variant { Administrator; Player; Coach; LeagueOfficial };
+service : {
+  add_member_to_team : (AddMemberPayload) -> (Result);
+  assign_coach : (AssignCoachPayload) -> (Result);
+  create_team : (CreateTeamPayload) -> (Result);
+  get_all_matches : () -> (Result_1) query;
+  get_all_teams : () -> (Result_2) query;
+  get_all_users : () -> (Result_3) query;
+  get_match : (nat64) -> (Result_4) query;
+  get_matches_by_date : (text) -> (Result_1) query;
+  get_matches_by_sport_type : (SportType) -> (Result_1) query;
+  get_matches_by_team : (nat64) -> (Result_1) query;
+  get_team : (nat64) -> (Result) query;
+  get_user : (nat64) -> (Result_5) query;
+  get_user_by_name : (text) -> (Result_5) query;
+  get_user_by_owner : () -> (Result_5) query;
+  register_user : (RegisterUserPayload) -> (Result_5);
+  schedule_match : (ScheduleMatchPayload) -> (Result_4);
+  submit_match_result : (MatchResultPayload) -> (Result_4);
+  update_user : (UpdateUserPayload) -> (Result_5);
+}
