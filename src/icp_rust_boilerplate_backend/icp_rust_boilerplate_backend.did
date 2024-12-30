@@ -1,58 +1,89 @@
-type AddMemberPayload = record { team_id : nat64; member_id : nat64 };
-type AssignCoachPayload = record { coach_id : nat64; team_id : nat64 };
-type CreateTeamPayload = record { name : text; sport_type : SportType };
-type Match = record {
+type ApplyLoanPayload = record {
+  principal_amount : float64;
+  borrower_id : nat64;
+  end_date : text;
+  start_date : text;
+  interest_rate : float64;
+  motorcycle_id : nat64;
+  daily_payment : float64;
+};
+type CreateLoanPoolPayload = record { name : text; initial_funds : float64 };
+type Investor = record {
   id : nat64;
-  result : opt MatchResult;
-  sport_type : SportType;
-  home_team : Team;
-  away_team : Team;
-  scheduled_date : text;
+  owner : principal;
+  name : text;
+  email : text;
+  total_invested : float64;
+  active_loans : vec nat64;
+  returns_earned : float64;
 };
-type MatchResult = record {
-  winner_team_id : nat64;
-  score_team_a : nat32;
-  score_team_b : nat32;
-  notes : text;
+type Loan = record {
+  id : nat64;
+  status : LoanStatus;
+  principal_amount : float64;
+  borrower_id : nat64;
+  end_date : text;
+  total_paid : float64;
+  start_date : text;
+  interest_rate : float64;
+  motorcycle_id : nat64;
+  daily_payment : float64;
 };
-type MatchResultPayload = record { result : MatchResult; match_id : nat64 };
+type LoanPool = record {
+  id : nat64;
+  investor_ids : vec nat64;
+  available_funds : float64;
+  name : text;
+  total_funds : float64;
+  active_loans : vec nat64;
+};
+type LoanStatus = variant { Active; Defaulted; Completed };
+type MakePaymentPayload = record {
+  loan_id : nat64;
+  borrower_id : nat64;
+  amount : float64;
+};
+type Motorcycle = record {
+  id : nat64;
+  status : MotorcycleStatus;
+  model : text;
+  manufacturer : text;
+  price : float64;
+};
+type MotorcycleStatus = variant { Available; Repossessed; InLoan; FullyOwned };
+type Payment = record {
+  id : nat64;
+  status : PaymentStatus;
+  loan_id : nat64;
+  borrower_id : nat64;
+  date : text;
+  amount : float64;
+};
+type PaymentStatus = variant { Failed; Completed; Pending };
+type RegisterInvestorPayload = record { name : text; email : text };
+type RegisterMotorcyclePayload = record {
+  model : text;
+  manufacturer : text;
+  price : float64;
+};
 type RegisterUserPayload = record {
   name : text;
   role : UserRole;
   email : text;
   address : text;
 };
-type Result = variant { Ok : Team; Err : text };
-type Result_1 = variant { Ok : vec Match; Err : text };
-type Result_2 = variant { Ok : vec Team; Err : text };
-type Result_3 = variant { Ok : vec User; Err : text };
-type Result_4 = variant { Ok : Match; Err : text };
-type Result_5 = variant { Ok : User; Err : text };
-type ScheduleMatchPayload = record {
-  home_team_id : nat64;
-  sport_type : SportType;
-  away_team_id : nat64;
-  scheduled_date : text;
-};
-type SportType = variant {
-  Basketball;
-  Tennis;
-  Volleyball;
-  Football;
-  Cricket;
-  Golf;
-  TableTennis;
-  Rugby;
-  Badminton;
-  Hockey;
-};
-type Team = record {
-  id : nat64;
-  members : vec nat64;
-  name : text;
-  sport_type : SportType;
-  coaches : vec nat64;
-};
+type Result = variant { Ok : LoanPool; Err : text };
+type Result_1 = variant { Ok : float64; Err : text };
+type Result_10 = variant { Ok : User; Err : text };
+type Result_11 = variant { Ok : Investor; Err : text };
+type Result_2 = variant { Ok : Loan; Err : text };
+type Result_3 = variant { Ok : Payment; Err : text };
+type Result_4 = variant { Ok : vec LoanPool; Err : text };
+type Result_5 = variant { Ok : vec Loan; Err : text };
+type Result_6 = variant { Ok : vec Motorcycle; Err : text };
+type Result_7 = variant { Ok : vec Payment; Err : text };
+type Result_8 = variant { Ok : vec User; Err : text };
+type Result_9 = variant { Ok : Motorcycle; Err : text };
 type UpdateUserPayload = record {
   id : nat64;
   name : text;
@@ -68,24 +99,26 @@ type User = record {
   email : text;
   address : text;
 };
-type UserRole = variant { Administrator; Player; Coach; LeagueOfficial };
+type UserRole = variant { Administrator; Borrower; Investor; Lender };
 service : {
-  add_member_to_team : (AddMemberPayload) -> (Result);
-  assign_coach : (AssignCoachPayload) -> (Result);
-  create_team : (CreateTeamPayload) -> (Result);
-  get_all_matches : () -> (Result_1) query;
-  get_all_teams : () -> (Result_2) query;
-  get_all_users : () -> (Result_3) query;
-  get_match : (nat64) -> (Result_4) query;
-  get_matches_by_date : (text) -> (Result_1) query;
-  get_matches_by_sport_type : (SportType) -> (Result_1) query;
-  get_matches_by_team : (nat64) -> (Result_1) query;
-  get_team : (nat64) -> (Result) query;
-  get_user : (nat64) -> (Result_5) query;
-  get_user_by_name : (text) -> (Result_5) query;
-  get_user_by_owner : () -> (Result_5) query;
-  register_user : (RegisterUserPayload) -> (Result_5);
-  schedule_match : (ScheduleMatchPayload) -> (Result_4);
-  submit_match_result : (MatchResultPayload) -> (Result_4);
-  update_user : (UpdateUserPayload) -> (Result_5);
+  allocate_funds_from_pool : (nat64, nat64, float64) -> (Result);
+  calculate_loan_balance : (nat64) -> (Result_1) query;
+  create_loan : (ApplyLoanPayload) -> (Result_2);
+  create_loan_pool : (CreateLoanPoolPayload) -> (Result);
+  create_payment : (MakePaymentPayload) -> (Result_3);
+  get_all_loan_pools : () -> (Result_4) query;
+  get_all_loans : () -> (Result_5) query;
+  get_all_motorcycles : () -> (Result_6) query;
+  get_all_payments_for_loan : (nat64) -> (Result_7) query;
+  get_all_users : () -> (Result_8) query;
+  get_loan : (nat64) -> (Result_2) query;
+  get_motorcycle : (nat64) -> (Result_9) query;
+  get_user : (nat64) -> (Result_10) query;
+  make_payment : (MakePaymentPayload) -> (Result_3);
+  register_investor : (RegisterInvestorPayload) -> (Result_11);
+  register_motorcycle : (RegisterMotorcyclePayload) -> (Result_9);
+  register_user : (RegisterUserPayload) -> (Result_10);
+  update_loan_status : (nat64, LoanStatus) -> (Result_2);
+  update_motorcycle_status : (nat64, MotorcycleStatus) -> (Result_9);
+  update_user : (UpdateUserPayload) -> (Result_10);
 }
