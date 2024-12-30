@@ -333,7 +333,7 @@ fn get_all_motorcycles() -> Result<Vec<Motorcycle>, String> {
 fn update_motorcycle_status(id: u64, status: MotorcycleStatus) -> Result<Motorcycle, String> {
     MOTORCYCLES_STORAGE.with(|storage| {
         let mut motorcycles = storage.borrow_mut();
-        if let Some(mut motorcycle) = motorcycles.get(&id).cloned() {
+        if let Some(mut motorcycle) = motorcycles.get(&id) {
             motorcycle.status = status;
             motorcycles.insert(id, motorcycle.clone());
             Ok(motorcycle)
@@ -395,7 +395,7 @@ fn get_all_loans() -> Result<Vec<Loan>, String> {
 fn update_loan_status(id: u64, status: LoanStatus) -> Result<Loan, String> {
     LOANS_STORAGE.with(|storage| {
         let mut loans = storage.borrow_mut();
-        if let Some(mut loan) = loans.get(&id).cloned() {
+        if let Some(mut loan) = loans.get(&id) {
             loan.status = status;
             loans.insert(id, loan.clone());
             Ok(loan)
@@ -418,8 +418,8 @@ fn create_payment(payload: MakePaymentPayload) -> Result<Payment, String> {
         loan_id: payload.loan_id,
         borrower_id: payload.borrower_id,
         amount: payload.amount,
-        status: Pending,
-        date: ic_cdk::api::time(),
+        status: PaymentStatus::Pending, // Corrected enum variant
+        date: ic_cdk::api::time().to_string(), // Converted timestamp to String
     };
 
     PAYMENTS_STORAGE.with(|payments| {
@@ -452,15 +452,23 @@ fn register_investor(payload: RegisterInvestorPayload) -> Result<Investor, Strin
         return Err("Name and email are required fields".to_string());
     }
 
+    let email_exists = INVESTORS_STORAGE.with(|storage| {
+        storage.borrow().iter().any(|(_, inv)| inv.email == payload.email)
+    });
+
+    if email_exists {
+        return Err("An investor with this email already exists".to_string());
+    }
+
     let id = generate_uuid();
     let investor = Investor {
         id,
         owner: caller(),
         name: payload.name,
         email: payload.email,
-        total_invested: ,
-        active_loans: ,
-        returns_earned:
+        total_invested: 0.0,
+        active_loans: vec![],
+        returns_earned: 0.0,
     };
 
     INVESTORS_STORAGE.with(|investors| {
@@ -469,20 +477,29 @@ fn register_investor(payload: RegisterInvestorPayload) -> Result<Investor, Strin
     })
 }
 
+
 #[ic_cdk::update]
 fn create_loan_pool(payload: CreateLoanPoolPayload) -> Result<LoanPool, String> {
-    if payload.total_amount <= 0.0 {
+    if payload.initial_funds <= 0.0 {
         return Err("Invalid pool amount".to_string());
+    }
+
+    let name_exists = LOAN_POOLS_STORAGE.with(|storage| {
+        storage.borrow().iter().any(|(_, pool)| pool.name == payload.name)
+    });
+
+    if name_exists {
+        return Err("A loan pool with this name already exists".to_string());
     }
 
     let id = generate_uuid();
     let pool = LoanPool {
         id,
         name: payload.name,
-        total_funds: payload.total_funds,
-        available_funds: 0.0,
-        investor_ids: ,
-        active_loans:, 
+        total_funds: payload.initial_funds,
+        available_funds: payload.initial_funds,
+        investor_ids: vec![],
+        active_loans: vec![],
     };
 
     LOAN_POOLS_STORAGE.with(|pools| {
@@ -490,6 +507,7 @@ fn create_loan_pool(payload: CreateLoanPoolPayload) -> Result<LoanPool, String> 
         Ok(pool)
     })
 }
+
 
 #[ic_cdk::query]
 fn get_all_loan_pools() -> Result<Vec<LoanPool>, String> {
@@ -512,22 +530,31 @@ fn get_all_loan_pools() -> Result<Vec<LoanPool>, String> {
 fn allocate_funds_from_pool(pool_id: u64, loan_id: u64, amount: f64) -> Result<LoanPool, String> {
     LOAN_POOLS_STORAGE.with(|pools| {
         let mut pools = pools.borrow_mut();
-        if let Some(mut pool) = pools.get(&pool_id).cloned() {
-            if pool.total_amount - pool.allocated_amount < amount {
+        if let Some(mut pool) = pools.get(&pool_id) {
+            if pool.available_funds < amount {
                 return Err("Insufficient funds in the pool".to_string());
             }
 
-            LOANS_STORAGE.with(|loans| {
+            // Update the loan
+            let loan_result = LOANS_STORAGE.with(|loans| {
                 let mut loans = loans.borrow_mut();
-                if let Some(mut loan) = loans.get(&loan_id).cloned() {
-                    loan.amount += amount;
+                if let Some(mut loan) = loans.get(&loan_id) {
+                    loan.principal_amount += amount;
                     loans.insert(loan_id, loan);
+                    Ok(())
                 } else {
-                    return Err(format!("Loan with ID {} not found", loan_id));
+                    Err(format!("Loan with ID {} not found", loan_id))
                 }
             });
 
-            pool.allocated_amount += amount;
+            // Check if the loan update succeeded
+            if let Err(err) = loan_result {
+                return Err(err);
+            }
+
+            // Update the pool's available funds
+            pool.available_funds -= amount;
+            pool.active_loans.push(loan_id);
             pools.insert(pool_id, pool.clone());
             Ok(pool)
         } else {
@@ -535,6 +562,69 @@ fn allocate_funds_from_pool(pool_id: u64, loan_id: u64, amount: f64) -> Result<L
         }
     })
 }
+
+#[ic_cdk::query]
+fn calculate_loan_balance(loan_id: u64) -> Result<f64, String> {
+    LOANS_STORAGE.with(|loans| {
+        let loans = loans.borrow();
+        if let Some(loan) = loans.get(&loan_id) {
+            let balance = loan.principal_amount - loan.total_paid;
+            Ok(balance)
+        } else {
+            Err(format!("Loan with ID {} not found", loan_id))
+        }
+    })
+}
+
+
+#[ic_cdk::update]
+fn make_payment(payload: MakePaymentPayload) -> Result<Payment, String> {
+    if payload.amount <= 0.0 {
+        return Err("Invalid payment amount".to_string());
+    }
+
+    let payment_id = generate_uuid();
+    let payment = Payment {
+        id: payment_id,
+        loan_id: payload.loan_id,
+        borrower_id: payload.borrower_id,
+        amount: payload.amount,
+        status: PaymentStatus::Completed,
+        date: ic_cdk::api::time().to_string(),
+    };
+
+    // Update the loan's total paid
+    let loan_update_result = LOANS_STORAGE.with(|loans| {
+        let mut loans = loans.borrow_mut();
+        if let Some(mut loan) = loans.get(&payload.loan_id) {
+            loan.total_paid += payload.amount;
+            loans.insert(payload.loan_id, loan);
+            Ok(())
+        } else {
+            Err(format!("Loan with ID {} not found", payload.loan_id))
+        }
+    });
+
+    // Return an error if the loan update failed
+    if let Err(err) = loan_update_result {
+        return Err(err);
+    }
+
+    // Store the payment record
+    let payment_store_result = PAYMENTS_STORAGE.with(|payments| {
+        payments.borrow_mut().insert(payment_id, payment.clone());
+        Ok(())
+    });
+
+    // Return an error if the payment store failed
+    if let Err(err) = payment_store_result {
+        return Err(err);
+    }
+
+    // Return the created payment
+    Ok(payment)
+}
+
 
 // Exporting the Candid interface
 ic_cdk::export_candid!();
